@@ -28,6 +28,9 @@
             border:1px solid rgba(242,233,216,.18); position:relative;}
   #progBar{height:100%; width:0%; background:linear-gradient(90deg,var(--mid),var(--sun)); border-radius:6px;}
   #progHome{position:absolute; right:4px; top:-2px; font-size:11px;}
+  #hungerLabel{font-size:11px; font-weight:800; letter-spacing:1px; color:var(--sun);}
+  #hungerBarWrap{width:80px; height:9px; background:rgba(242,233,216,.15); border-radius:5px; overflow:hidden;}
+  #hungerBar{height:100%; width:100%; background:#7fd8a5; border-radius:5px;}
   /* toast for educational moments */
   #toast{position:absolute; left:50%; bottom:34px; transform:translateX(-50%);
          background:var(--panel); border:1px solid var(--coral); border-radius:12px;
@@ -98,6 +101,7 @@
 <div id="hud">
   <div class="hud-box"><span id="lvlLabel">EASY</span></div>
   <div class="hud-box"><span id="hearts">&#10084;&#10084;&#10084;</span></div>
+  <div class="hud-box"><span id="hungerLabel">FOOD</span><div id="hungerBarWrap"><div id="hungerBar"></div></div></div>
   <div id="progWrap"><div id="progBar"></div><span id="progHome">&#127965;</span></div>
   <div class="hud-box"><span id="foodLabel">Fish 0</span></div>
   <div class="hud-box"><button id="exitBtn" aria-label="Exit to menu">&#10005; EXIT</button></div>
@@ -118,6 +122,7 @@
       Swim with <kbd>&#8592;</kbd><kbd>&#8593;</kbd><kbd>&#8595;</kbd><kbd>&#8594;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
       &nbsp;&middot;&nbsp; Pause <kbd>P</kbd> &nbsp;&middot;&nbsp; On touch screens, drag to swim.<br>
       The current always pushes east — keep moving, and don't get pinned against a net.
+      Eat as you go: an empty food bar costs a heart.
     </p>
   </div>
 </div>
@@ -283,6 +288,7 @@ const FACTS = {
     'Animals caught accidentally in fishing gear are called <b>bycatch</b>. Hundreds of thousands of sea creatures become bycatch every year.',
     'Thin net mesh is almost <b>invisible underwater</b> — that is exactly why it is such a deadly trap for marine life.',
     '<b>Circle hooks</b> and escape hatches called <b>turtle excluder devices</b> help fishers avoid catching the wrong species.',
+    '<b>Overfishing</b> doesn’t just empty nets of the future — it leaves whole food webs hungry, from sharks to seabirds.',
   ],
   sawfish: [
     'A sawfish’s <b>toothed rostrum</b> (its saw) tangles in nets so easily that entanglement helped make all five sawfish species endangered.',
@@ -310,25 +316,25 @@ const DIFFS = {
     label: 'EASY', title: 'Sheltered Bay',
     desc: 'Calm water, a few patient anglers and some small drifting nets. A gentle first swim.',
     L: 4200, hooks: 4, nets: 5, rocks: 3, spires: 0, drifting: 0, bags: 2,
-    hookSpd: .8, netScale: .8, pan: 48,
+    hookSpd: .8, netScale: .8, pan: 48, hungerDrain: 1.8,
   },
   medium: {
     label: 'MEDIUM', title: 'The Fishing Grounds',
     desc: 'Busier water. More lines, bigger nets, and rock fields to weave through.',
     L: 5400, hooks: 6, nets: 7, rocks: 4, spires: 1, drifting: 0, bags: 3,
-    hookSpd: 1.15, netScale: 1, pan: 62,
+    hookSpd: 1.15, netScale: 1, pan: 62, hungerDrain: 2,
   },
   hard: {
     label: 'HARD', title: 'The Fleet',
     desc: 'The whole harbour is out today. Some nets have broken loose and drift with the current.',
     L: 6600, hooks: 9, nets: 9, rocks: 5, spires: 2, drifting: 2, bags: 3,
-    hookSpd: 1.5, netScale: 1.15, pan: 78,
+    hookSpd: 1.5, netScale: 1.15, pan: 78, hungerDrain: 2.2,
   },
   fiendish: {
     label: 'FIENDISH', title: 'The Gauntlet',
     desc: 'Hooks stacked on hooks, walls of mesh, rock mazes, restless currents. Very few make it home.',
     L: 8000, hooks: 12, nets: 12, rocks: 6, spires: 3, drifting: 4, bags: 4,
-    hookSpd: 1.9, netScale: 1.3, pan: 95,
+    hookSpd: 1.9, netScale: 1.3, pan: 95, hungerDrain: 2.5,
   },
 };
 
@@ -353,6 +359,7 @@ function buildLevel(diffKey){
   const x0 = 650, x1 = L - 550, gap = (x1 - x0) / Math.max(1, kinds.length - 1);
   kinds.forEach((k, i) => {
     const x = x0 + gap * i + rand(-gap * .16, gap * .16);
+    if (k === 'net' && x > L - 1100) k = pick(['hook', 'rock']); // home stretch: the island is in sight, no nets
     if (k === 'hook'){
       hazards.push({ type: 'hook', x, phase: rand(0, 6.28),
         speed: D.hookSpd + rand(0, .35),
@@ -363,30 +370,39 @@ function buildLevel(diffKey){
     } else if (k === 'spire'){
       // rock column rising from the seabed — swim over or around
       const top = rand(SURF + 150, SURF + 240);
-      let y = FLOOR - 10, r = rand(46, 58);
+      let y = FLOOR - 36, r = rand(46, 58);
       while (y > top){ rocks.push({ x: x + rand(-8, 8), y, r }); y -= r * 1.2; r = Math.max(24, r * .85); }
     } else {
-      // boulder cluster on the seabed
+      // boulder cluster settled into the sand
       const cn = 2 + Math.floor(rand(0, 3));
       for (let c = 0; c < cn; c++){
         const r = rand(28, 58);
-        rocks.push({ x: x + (c - (cn - 1) / 2) * rand(30, 46), y: FLOOR - r * rand(.3, .7), r });
+        rocks.push({ x: x + (c - (cn - 1) / 2) * rand(30, 46), y: FLOOR - 28 - r * rand(.15, .55), r });
       }
     }
   });
 
   // free-drifting ghost nets (hard/fiendish) — they ride the current leftward
   for (let i = 0; i < D.drifting; i++){
-    const n = makeNet(rand(L * .3, L * .95), D, true);
+    const n = makeNet(rand(L * .3, L - 1200), D, true);
     n.vx = -rand(24, 46);
     hazards.push(n);
   }
 
+  // hazy rock formations in the distance (no collision — the player swims in front)
+  const bgRocks = [];
+  for (let i = 0; i < Math.round(L / 650); i++){
+    const w = rand(80, 170), h = rand(110, 300);
+    bgRocks.push({ x: rand(300, L * 1.05), w, h, pts: rockPts(1) });
+  }
+
   // food: fish for sharks, jellyfish for turtles (+ deceptive plastic bags)
   const isTurtle = player.species === 'turtle';
-  for (let i = 0; i < 8; i++){
+  const foodN = 8 + Math.round(L / 900);   // hunger needs feeding — more food on longer swims
+  for (let i = 0; i < foodN; i++){
     food.push({ kind: isTurtle ? 'jelly' : 'fish', x: rand(420, L - 420),
-      y: rand(SURF + 70, FLOOR - 70), got: false, bob: rand(0, 6.28), flip: Math.random() < .5 ? -1 : 1 });
+      y: rand(SURF + 70, FLOOR - 80), got: false, bob: rand(0, 6.28), flip: Math.random() < .5 ? -1 : 1,
+      c: pick(REEF_FISH) });
   }
   if (isTurtle){
     for (let i = 0; i < D.bags; i++){
@@ -413,10 +429,15 @@ function buildLevel(diffKey){
       size: rand(.7, 1.3), color: pick(CORAL_COLORS) });
   }
 
-  return { diff: diffKey, L, hazards, rocks, corals, food, decos, autoX: 0, name: D.title, desc: D.desc };
+  return { diff: diffKey, L, hazards, rocks, corals, bgRocks, food, decos, autoX: 0, name: D.title, desc: D.desc };
 }
 
 const CORAL_COLORS = ['#ff7a59', '#e8639b', '#b96ad9', '#ffb054', '#ff5c7a', '#5fd0b5'];
+// reef fish liveries: [body, stripe/tail accent]
+const REEF_FISH = [
+  ['#ffd24d', '#1c2e3d'], ['#ff8a3d', '#f2e9d8'], ['#63b3ff', '#123049'],
+  ['#c86bff', '#f2e9d8'], ['#7fd8a5', '#123049'], ['#ff5c7a', '#f2e9d8'],
+];
 
 function rockPts(r){
   // angular boulder outline: 6-8 uneven facets
@@ -455,7 +476,7 @@ let touchTarget = null, toastTimer = null, bagToastShown = false;
 
 const player = {
   x: 100, y: 300, vx: 0, vy: 0, species: 'turtle',
-  hearts: 4, radius: 21, invuln: 0, stun: 0,
+  hearts: 3, radius: 21, invuln: 0, stun: 0, hunger: 100,
   food: 0, dir: 1, wobble: 0, dead: false,
 };
 let particles = [], ambient = [];
@@ -475,7 +496,7 @@ function startLevel(diffKey){
   player.x = 100; player.y = (SURF + FLOOR) / 2;
   player.vx = 0; player.vy = 0;
   player.hearts = sp.hearts; player.radius = sp.radius;
-  player.invuln = 0; player.stun = 0;
+  player.invuln = 0; player.stun = 0; player.hunger = 100;
   player.food = 0; player.dir = 1; player.dead = false;
   camX = 0; levelTime = 0; bagToastShown = false;
   $('lvlLabel').textContent = DIFFS[diffKey].label;
@@ -506,6 +527,9 @@ function updateHudBars(){
   if (!level) return;
   const p = Math.min(1, Math.max(0, player.x / (level.L + 60)));
   $('progBar').style.width = (p * 100).toFixed(1) + '%';
+  const h = Math.max(0, player.hunger);
+  $('hungerBar').style.width = h.toFixed(0) + '%';
+  $('hungerBar').style.background = h > 50 ? '#7fd8a5' : h > 25 ? '#ffb054' : '#ff5c5c';
 }
 function toast(html, ms){
   $('toast').innerHTML = html;
@@ -556,6 +580,8 @@ function hurt(pushX, pushY, why){
         ? 'Tangled in the mesh — just like too many real ' + SPECIES[player.species].name.toLowerCase() + 's.'
         : why === 'bag'
         ? 'A bellyful of plastic. For real sea turtles, bags are one of the ocean’s quietest dangers.'
+        : why === 'hunger'
+        ? 'Too hungry to swim on. In an overfished sea, finding a meal is a struggle for everyone.'
         : pick([
             'The fleet got you this time. The reef still waits.',
             'That hook had your name on it. Next run it won’t.',
@@ -615,6 +641,13 @@ function update(dt){
       if (d > 14){ ix = dx / d; iy = dy / d; }
     }
   }
+  // hunger ticks down; an empty belly costs a heart
+  player.hunger -= DIFFS[level.diff].hungerDrain * dt;
+  if (player.hunger <= 0){
+    player.hunger = 55;
+    hurt(-60, 0, 'hunger');
+  }
+
   const mag = Math.hypot(ix, iy) || 1;
   const tx = (ix / mag) * sp.speed, ty = (iy / mag) * sp.speed * .85;
   player.vx += (tx - player.vx) * Math.min(1, dt * 6);
@@ -658,9 +691,14 @@ function update(dt){
       const d = Math.hypot(player.x - h.x, player.y - h.hy);
       if (d < player.radius + 13) hurt(-190, player.y > h.hy ? 160 : -60, 'hook');
     } else { // net
+      if (h.gone) continue;
       if (h.vx){
         h.x += h.vx * dt;
-        if (h.x < camX - 260) h.x = Math.min(level.L - 300, camX + CW + rand(200, 700));
+        if (h.x < camX - 260){
+          const nx = camX + CW + rand(200, 700);
+          if (nx > level.L - 1100){ h.gone = true; h.x = -9999; continue; } // island in sight: nets retire
+          h.x = nx;
+        }
       }
       const hw = h.w / 2;
       if (player.x + player.radius * .7 > h.x - hw && player.x - player.radius * .7 < h.x + hw &&
@@ -687,7 +725,8 @@ function update(dt){
           toast('&#129443; That was a <b>plastic bag</b>, not a jellyfish! Real sea turtles make the same mistake — one more reason to keep plastic out of the ocean.', 6000);
         }
       } else {
-        player.food++; updateHud(); sfx.food();
+        player.food++; player.hunger = Math.min(100, player.hunger + 32);
+        updateHud(); sfx.food();
         burst(f.x, fy2, '#f2e9d8', 8);
       }
     }
@@ -724,12 +763,12 @@ function update(dt){
 }
 
 function floorY(x){
-  if (!level) return FLOOR;
+  if (!level) return FLOOR - 26;
   const start = level.L - 420;
-  if (x <= start) return FLOOR;
+  if (x <= start) return FLOOR - 26;
   // sandy slope climbs up and breaks the surface at the island
   const t = Math.min(1.1, (x - start) / 620);
-  return Math.max(SURF - 40, FLOOR - t * t * 520);
+  return Math.max(SURF - 40, Math.min(FLOOR - 26, FLOOR - t * t * 520));
 }
 
 /* ============================== drawing ============================== */
@@ -792,7 +831,7 @@ function draw(){
   }
   ctx.globalAlpha = 1;
 
-  if (level) drawWorld();
+  if (level){ drawBgRocks(); drawWorld(); }
   drawParticles();
   ctx.restore();
 
@@ -800,6 +839,25 @@ function draw(){
   const v = ctx.createRadialGradient(CW / 2, CH / 2, CH * .55, CW / 2, CH / 2, CH * .95);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,10,20,.35)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, CW, CH);
+}
+
+function drawBgRocks(){
+  // distant formations, seen hazily through the water; drawn behind everything
+  ctx.save();
+  ctx.globalAlpha = .45;
+  ctx.fillStyle = '#1c4560';
+  for (const b of level.bgRocks){
+    const sx = b.x - camX * .55;
+    if (sx + b.w < -60 || sx - b.w > CW + 60) continue;
+    const cy = CH - b.h / 2 + 14;
+    ctx.beginPath();
+    b.pts.forEach((p, i) => {
+      const px2 = sx + p.x * b.w / 2, py2 = cy + p.y * b.h / 2;
+      i === 0 ? ctx.moveTo(px2, py2) : ctx.lineTo(px2, py2);
+    });
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawWorld(){
@@ -818,24 +876,36 @@ function drawWorld(){
   ctx.restore();
 }
 
+function sandTop(x){
+  const start = level.L - 420;
+  return x > start ? floorY(x) - 6 + Math.sin(x * .03) * 3
+                   : FLOOR - 30 + Math.sin(x * .05) * 4;
+}
+
 function drawSeabed(){
   const lo = camX - 40, hi = camX + CW + 40;
   const start = level.L - 420;
-  const snap = v => Math.floor(v / 16) * 16;   // shared sample grid keeps the two fills seam-free
-  ctx.fillStyle = '#123049';
+  const snap = v => Math.floor(v / 16) * 16;   // shared sample grid keeps the fills seam-free
+  // one continuous sand floor, dimmer with depth
+  const g2 = ctx.createLinearGradient(0, FLOOR - 40, 0, CH);
+  g2.addColorStop(0, '#d9ba7e'); g2.addColorStop(1, '#a8875a');
+  ctx.fillStyle = g2;
   ctx.beginPath(); ctx.moveTo(snap(lo), CH + 5);
-  for (let x = snap(lo); x <= hi; x += 16)
-    ctx.lineTo(x, x > start ? floorY(x) - 6 + Math.sin(x * .03) * 3
-                            : floorY(x) - 8 + Math.sin(x * .02) * 5);
+  for (let x = snap(lo); x <= hi; x += 16) ctx.lineTo(x, sandTop(x));
   ctx.lineTo(hi, CH + 5); ctx.closePath(); ctx.fill();
-  // sandy slope up to (and above) the waterline
+  // brighter sand where the island rises
   if (hi > start){
     const s0 = snap(Math.max(lo, start));
     ctx.fillStyle = '#e8c98a';
     ctx.beginPath(); ctx.moveTo(s0, CH + 5);
-    for (let x = s0; x <= hi; x += 16)
-      ctx.lineTo(x, floorY(x) - 6 + Math.sin(x * .03) * 3);
+    for (let x = s0; x <= hi; x += 16) ctx.lineTo(x, sandTop(x));
     ctx.lineTo(hi, CH + 5); ctx.closePath(); ctx.fill();
+  }
+  // ripple marks in the flat sand
+  ctx.strokeStyle = 'rgba(255,255,255,.09)'; ctx.lineWidth = 2;
+  for (let x = snap(lo); x < Math.min(hi, start); x += 64){
+    const sy = sandTop(x) + 11;
+    ctx.beginPath(); ctx.moveTo(x + 8, sy); ctx.quadraticCurveTo(x + 24, sy - 4, x + 40, sy); ctx.stroke();
   }
   // decorations
   for (const d of level.decos){
@@ -846,25 +916,26 @@ function drawSeabed(){
 
 function drawDeco(d){
   const s = d.size, sw = Math.sin(time * 1.5 + d.seed);
+  const G = sandTop(d.x) + 4;   // rooted in the sand floor
   if (d.kind === 'grass'){
     ctx.strokeStyle = '#2e8b6a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
     for (let i = -1; i <= 1; i++){
       const h = (30 + 18 * Math.abs(Math.sin(d.seed + i))) * s;
-      ctx.beginPath(); ctx.moveTo(d.x + i * 7, CH);
-      ctx.quadraticCurveTo(d.x + i * 7 + sw * 8, CH - h * .6, d.x + i * 7 + sw * 13, CH - h);
+      ctx.beginPath(); ctx.moveTo(d.x + i * 7, G);
+      ctx.quadraticCurveTo(d.x + i * 7 + sw * 8, G - h * .6, d.x + i * 7 + sw * 13, G - h);
       ctx.stroke();
     }
   } else if (d.kind === 'coralfan'){
     ctx.strokeStyle = d.color || '#c2557e'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
     for (let i = 0; i < 5; i++){
       const a = -Math.PI / 2 + (i - 2) * .3 + sw * .04;
-      ctx.beginPath(); ctx.moveTo(d.x, CH - 2);
-      ctx.lineTo(d.x + Math.cos(a) * 34 * s, CH - 2 + Math.sin(a) * 34 * s);
+      ctx.beginPath(); ctx.moveTo(d.x, G - 2);
+      ctx.lineTo(d.x + Math.cos(a) * 34 * s, G - 2 + Math.sin(a) * 34 * s);
       ctx.stroke();
     }
   } else if (d.kind === 'star'){
     ctx.fillStyle = '#ffb054';
-    ctx.save(); ctx.translate(d.x, CH - 7); ctx.rotate(d.seed);
+    ctx.save(); ctx.translate(d.x, G - 5); ctx.rotate(d.seed);
     ctx.beginPath();
     for (let i = 0; i < 10; i++){
       const rr = (i % 2 === 0 ? 10 : 4.5) * s;
@@ -876,8 +947,8 @@ function drawDeco(d){
     ctx.strokeStyle = '#7fd8a5'; ctx.lineWidth = 3; ctx.lineCap = 'round';
     for (let i = 0; i < 6; i++){
       const a = -Math.PI / 2 + (i - 2.5) * .35 + sw * .1;
-      ctx.beginPath(); ctx.moveTo(d.x, CH);
-      ctx.quadraticCurveTo(d.x + Math.cos(a) * 10, CH - 12 * s, d.x + Math.cos(a) * 16 * s, CH - 20 * s);
+      ctx.beginPath(); ctx.moveTo(d.x, G);
+      ctx.quadraticCurveTo(d.x + Math.cos(a) * 10, G - 12 * s, d.x + Math.cos(a) * 16 * s, G - 20 * s);
       ctx.stroke();
     }
   }
@@ -977,12 +1048,20 @@ function drawFood(f){
   if (f.got) return;
   const fy = f.y + Math.sin(time * 2 + f.bob) * 6;
   if (f.kind === 'fish'){
+    const c = f.c || REEF_FISH[0];
     ctx.save(); ctx.translate(f.x, fy); ctx.scale(f.flip, 1);
-    ctx.fillStyle = '#c9d9e2';
-    ctx.beginPath(); ctx.ellipse(0, 0, 11, 5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = c[0];
+    ctx.beginPath(); ctx.ellipse(0, 0, 11, 5.5, 0, 0, 7); ctx.fill();
+    // tail
     ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(-16, -5 + Math.sin(time * 7 + f.bob) * 2); ctx.lineTo(-16, 5); ctx.closePath(); ctx.fill();
+    // dorsal fin
+    ctx.beginPath(); ctx.moveTo(-3, -4); ctx.lineTo(1, -8.5); ctx.lineTo(4, -4); ctx.closePath(); ctx.fill();
+    // reef stripe
+    ctx.fillStyle = c[1];
+    ctx.beginPath(); ctx.ellipse(1, 0, 2.2, 5.5, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-5.5, 0, 1.4, 4.2, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#0a2a43';
-    ctx.beginPath(); ctx.arc(6, -1, 1.4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(6.5, -1.5, 1.4, 0, 7); ctx.fill();
     ctx.restore();
   } else if (f.kind === 'jelly'){
     ctx.save(); ctx.translate(f.x, fy);
@@ -1074,6 +1153,47 @@ function drawNet(h){
   ctx.restore();
 }
 
+function drawPalm(px, py, h, lean){
+  const sway = Math.sin(time * .7 + px) * .015;
+  const cx = px + lean * h * .55, cy = py - h;          // crown
+  const ctlx = px + lean * h * .22, ctly = py - h * .55;
+  // tapered trunk
+  ctx.fillStyle = '#8a5a33';
+  ctx.beginPath();
+  ctx.moveTo(px - 4.5, py + 5);
+  ctx.quadraticCurveTo(ctlx - 3.5, ctly, cx - 2, cy);
+  ctx.lineTo(cx + 2, cy);
+  ctx.quadraticCurveTo(ctlx + 3.5, ctly, px + 4.5, py + 5);
+  ctx.closePath(); ctx.fill();
+  // ring shadows up the trunk
+  ctx.strokeStyle = 'rgba(60,38,20,.5)'; ctx.lineWidth = 1.4;
+  for (const t of [.2, .4, .6, .8]){
+    const bx = (1 - t) * (1 - t) * px + 2 * t * (1 - t) * ctlx + t * t * cx;
+    const by = (1 - t) * (1 - t) * py + 2 * t * (1 - t) * ctly + t * t * cy;
+    const w = 4.5 - 2.2 * t;
+    ctx.beginPath(); ctx.moveTo(bx - w, by); ctx.lineTo(bx + w, by); ctx.stroke();
+  }
+  // drooping filled fronds
+  const fl = 12 + h * .45;
+  for (let i = 0; i < 7; i++){
+    const a = -Math.PI * (.08 + i * .14) + sway;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const tipx = cx + dx * fl, tipy = cy + dy * fl + fl * .55;
+    const mx = cx + dx * fl * .55, my = cy + dy * fl * .55 + fl * .1;
+    ctx.fillStyle = i % 2 ? '#2e8b6a' : '#3aa878';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.quadraticCurveTo(mx - dy * 5, my + dx * 5 - 3, tipx, tipy);
+    ctx.quadraticCurveTo(mx + dy * 5, my - dx * 5 + 2, cx, cy + 2);
+    ctx.closePath(); ctx.fill();
+  }
+  // coconut cluster under the crown
+  ctx.fillStyle = '#6b4a2b';
+  ctx.beginPath(); ctx.arc(cx - 4, cy + 5, 3.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 3, cy + 6, 3.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy + 9, 3.2, 0, 7); ctx.fill();
+}
+
 function drawIsland(){
   const L = level.L;
   // lapping foam where the emerging beach meets the sea
@@ -1083,24 +1203,15 @@ function drawIsland(){
     ctx.lineTo(x, SURF + 2 + Math.sin(x * .12 + time * 3) * 1.8);
   ctx.stroke();
 
-  // coconut palm planted on the beach crest
-  const px = L + 300, base = SURF - 16;
-  ctx.strokeStyle = '#8a5a33'; ctx.lineWidth = 7; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(px, base + 4);
-  ctx.quadraticCurveTo(px + 7, base - 18, px + 16, base - 34); ctx.stroke();
-  const cx = px + 16, cy = base - 34;
-  ctx.strokeStyle = '#2e8b6a'; ctx.lineWidth = 5;
-  for (let i = 0; i < 6; i++){
-    const a = -.25 - i * .48 + Math.sin(time * .8) * .02;
-    ctx.beginPath(); ctx.moveTo(cx, cy);
-    ctx.quadraticCurveTo(cx + Math.cos(a) * 12, cy + Math.sin(a) * 12 - 4,
-                         cx + Math.cos(a) * 22, cy + Math.sin(a) * 22 + 5);
-    ctx.stroke();
-  }
-  // coconuts
-  ctx.fillStyle = '#6b4a2b';
-  ctx.beginPath(); ctx.arc(cx - 4, cy + 3, 3.5, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + 3, cy + 4, 3.5, 0, 7); ctx.fill();
+  // a small grove of coconut palms on the crest
+  drawPalm(L + 240, SURF - 40, 34, -.3);
+  drawPalm(L + 320, SURF - 42, 40, .28);
+  drawPalm(L + 395, SURF - 44, 28, .55);
+  // beach scrub at their feet
+  ctx.fillStyle = '#3aa878';
+  ctx.beginPath(); ctx.arc(L + 275, SURF - 38, 7, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#2e8b6a';
+  ctx.beginPath(); ctx.arc(L + 362, SURF - 41, 6, Math.PI, 0); ctx.fill();
 
   // welcome buoy at the finish
   ctx.fillStyle = '#ff7a59';
