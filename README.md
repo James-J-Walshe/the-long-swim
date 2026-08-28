@@ -10,7 +10,7 @@ Open `index.html` in any modern browser — the whole game is a single self-cont
 
 - **Swim**: arrow keys / WASD, or drag on touch screens
 - **Pause**: P
-- Four difficulties: Easy, Medium, Hard, Fiendish
+- Four difficulties: Easy, Medium, Hard, Extreme
 
 ## The educational bits
 

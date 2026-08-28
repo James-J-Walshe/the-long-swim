@@ -212,6 +212,9 @@ try {
   if (raw) save = Object.assign(save, JSON.parse(raw));
 } catch (e) {}
 function persist(){ try { localStorage.setItem('longswim2', JSON.stringify(save)); } catch (e) {} }
+// migrate saves from when Extreme was called Fiendish
+if (save.diff === 'fiendish') save.diff = 'extreme';
+if (save.done && save.done.fiendish){ save.done.extreme = true; delete save.done.fiendish; }
 
 /* ============================== audio ============================== */
 let AC = null;
@@ -311,7 +314,7 @@ function randomFact(){
 }
 
 /* ============================== difficulties ============================== */
-const DIFF_ORDER = ['easy', 'medium', 'hard', 'fiendish'];
+const DIFF_ORDER = ['easy', 'medium', 'hard', 'extreme'];
 const DIFFS = {
   easy: {
     label: 'EASY', title: 'Sheltered Bay',
@@ -331,8 +334,8 @@ const DIFFS = {
     L: 6600, hooks: 9, nets: 9, rocks: 5, spires: 2, drifting: 2, bags: 3,
     hookSpd: 1.5, netScale: 1.15, pan: 78, hungerDrain: 2.2,
   },
-  fiendish: {
-    label: 'FIENDISH', title: 'The Gauntlet',
+  extreme: {
+    label: 'EXTREME', title: 'The Gauntlet',
     desc: 'Hooks stacked on hooks, walls of mesh, rock mazes, restless currents. Very few make it home.',
     L: 8000, hooks: 12, nets: 12, rocks: 6, spires: 3, drifting: 4, bags: 4,
     hookSpd: 1.9, netScale: 1.3, pan: 95, hungerDrain: 2.5,
@@ -383,7 +386,7 @@ function buildLevel(diffKey){
     }
   });
 
-  // free-drifting ghost nets (hard/fiendish) — they ride the current leftward
+  // free-drifting ghost nets (hard/extreme) — they ride the current leftward
   for (let i = 0; i < D.drifting; i++){
     const n = makeNet(rand(L * .3, L - 1200), D, true);
     n.vx = -rand(24, 46);
