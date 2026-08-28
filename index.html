@@ -65,7 +65,6 @@
         border-radius:10px; padding:10px 16px; transition:transform .1s, border-color .1s;}
   .diff:hover{transform:translateY(-2px);}
   .diff.sel{border-color:var(--coral); color:var(--coral);}
-  .diff .tick{color:#7fd8a5; margin-left:5px;}
   .btn{font-family:'Bungee',cursive; font-size:17px; color:var(--abyss); background:var(--coral);
        border:none; border-radius:12px; padding:13px 30px; cursor:pointer; letter-spacing:1px;
        box-shadow:0 5px 0 #b34a31; transition:transform .1s;}
@@ -1415,7 +1414,7 @@ function buildDiffRow(){
   DIFF_ORDER.forEach(key => {
     const b = document.createElement('button');
     b.className = 'diff' + (save.diff === key ? ' sel' : '');
-    b.innerHTML = DIFFS[key].label + (save.done[key] ? '<span class="tick">&#10003;</span>' : '');
+    b.textContent = DIFFS[key].label;
     b.addEventListener('click', () => setDiff(key));
     b._key = key;
     row.appendChild(b);
