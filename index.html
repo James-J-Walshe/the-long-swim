@@ -1,5 +1,6 @@
 <meta charset="utf-8">
 <title>The Long Swim</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128034;</text></svg>">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap">
 <style>
   :root{
@@ -389,6 +390,13 @@ function buildLevel(diffKey){
     hazards.push(n);
   }
 
+  // a welcoming party of the player's own kind, waiting in the lagoon
+  const npcs = [];
+  for (let i = 0; i < 3; i++){
+    npcs.push({ x0: L + 175 + i * 55 + rand(-12, 12), y0: rand(SURF + 45, 205),
+      ph: rand(0, 6.28), s: rand(.55, .85) });
+  }
+
   // hazy rock formations in the distance (no collision — the player swims in front)
   const bgRocks = [];
   for (let i = 0; i < Math.round(L / 650); i++){
@@ -429,7 +437,7 @@ function buildLevel(diffKey){
       size: rand(.7, 1.3), color: pick(CORAL_COLORS) });
   }
 
-  return { diff: diffKey, L, hazards, rocks, corals, bgRocks, food, decos, autoX: 0, name: D.title, desc: D.desc };
+  return { diff: diffKey, L, hazards, rocks, corals, bgRocks, npcs, food, decos, autoX: 0, name: D.title, desc: D.desc };
 }
 
 const CORAL_COLORS = ['#ff7a59', '#e8639b', '#b96ad9', '#ffb054', '#ff5c7a', '#5fd0b5'];
@@ -525,7 +533,7 @@ function updateHud(){
 }
 function updateHudBars(){
   if (!level) return;
-  const p = Math.min(1, Math.max(0, player.x / (level.L + 140)));
+  const p = Math.min(1, Math.max(0, player.x / (level.L + 180)));
   $('progBar').style.width = (p * 100).toFixed(1) + '%';
   const h = Math.max(0, player.hunger);
   $('hungerBar').style.width = h.toFixed(0) + '%';
@@ -676,14 +684,15 @@ function update(dt){
 
   // bounds + beach floor
   const fy = floorY(player.x);
-  player.x = Math.max(camX + 12 + player.radius, Math.min(level.L + 200, player.x));
+  player.x = Math.max(camX + 12 + player.radius, Math.min(level.L + 260, player.x));
   player.y = Math.max(SURF + 22, Math.min(fy - player.radius - 2, player.y));
 
   // camera
   const target = Math.max(level.autoX, Math.min(player.x - 330, camCap));
   camX += (target - camX) * Math.min(1, dt * 5);
-  // finale: the view climbs with the sand bank until the waterline sits mid-screen
-  const targetY = -Math.max(0, Math.min(170, ((FLOOR - 26) - floorY(player.x)) * .48));
+  // finale: the view climbs smoothly with the sand bank until the waterline sits mid-screen
+  const ts = Math.max(0, Math.min(1, (player.x - (level.L - 420)) / 460));
+  const targetY = -170 * ts * ts * (3 - 2 * ts);
   camY += (targetY - camY) * Math.min(1, dt * 3);
 
   // hazards
@@ -704,11 +713,17 @@ function update(dt){
         }
       }
       const hw = h.w / 2;
-      if (player.x + player.radius * .7 > h.x - hw && player.x - player.radius * .7 < h.x + hw &&
-          player.y + player.radius * .7 > h.y0 && player.y - player.radius * .7 < h.y1 &&
-          player.invuln <= 0){
+      let hit = player.x + player.radius * .7 > h.x - hw && player.x - player.radius * .7 < h.x + hw &&
+                player.y + player.radius * .7 > h.y0 && player.y - player.radius * .7 < h.y1;
+      if (!hit && player.species === 'sawfish'){
+        // the toothed saw reaches well ahead of the body — and snags first
+        const s1 = player.x + (player.dir > 0 ? 24 : -60);
+        const s2 = player.x + (player.dir > 0 ? 60 : -24);
+        hit = s2 > h.x - hw && s1 < h.x + hw && player.y + 9 > h.y0 && player.y - 9 < h.y1;
+      }
+      if (hit && player.invuln <= 0){
         hurt(-230, h.mode === 'floor' ? -140 : 120, 'net');
-        player.x = h.x - hw - player.radius - 4; // wriggle free, shoved back
+        player.x = h.x - hw - (player.species === 'sawfish' && player.dir > 0 ? 64 : player.radius) - 4; // wriggle free, shoved back
       }
     }
   }
@@ -736,7 +751,7 @@ function update(dt){
   }
 
   // home: gliding into the lagoon
-  if (player.x > level.L + 140 && state === 'play'){
+  if (player.x > level.L + 180 && state === 'play'){
     state = 'done';
     $('hud').classList.remove('on');
     sfx.win();
@@ -769,15 +784,25 @@ function floorY(x){
   if (!level) return FLOOR - 26;
   const start = level.L - 420, L = level.L;
   if (x <= start) return FLOOR - 26;
-  if (x <= L + 40){
-    // the long climb up the reef slope
-    const t = (x - start) / 460;
-    return (FLOOR - 26) - t * t * ((FLOOR - 26) - 170);
+  if (x <= L - 40){
+    // the long climb up the reef slope, eased at both ends
+    const t = (x - start) / 380, s = t * t * (3 - 2 * t);
+    return (FLOOR - 26) - s * ((FLOOR - 26) - 210);
   }
-  if (x <= L + 280) return 170;   // the shallow lagoon shelf — home
+  if (x <= L + 60){
+    // a little underwater sand bank guards the lagoon entrance
+    const c = Math.cos(Math.PI * (x - (L + 10)) / 100);
+    return 210 - 40 * Math.max(0, c);
+  }
+  if (x <= L + 120){
+    // slip down the bank's inner face
+    const t = (x - (L + 60)) / 60, s = t * t * (3 - 2 * t);
+    return 210 + s * 25;
+  }
+  if (x <= L + 330) return 235;   // the lagoon — deeper, calm water. Home.
   // beyond the lagoon the beach rises gently out of the water
-  const u = Math.min(1, (x - (L + 280)) / 260);
-  return Math.max(SURF - 40, 170 - u * u * 160);
+  const u = Math.min(1, (x - (L + 330)) / 260);
+  return Math.max(SURF - 40, 235 - u * u * 225);
 }
 
 /* ============================== drawing ============================== */
@@ -885,8 +910,22 @@ function drawWorld(){
     else drawNet(h);
   }
   drawIsland();
+  drawNPCs();
   drawPlayer();
   ctx.restore();
+}
+
+function drawNPCs(){
+  for (const n of level.npcs){
+    const x = n.x0 + Math.sin(time * .5 + n.ph) * 30;
+    const y = n.y0 + Math.sin(time * 1.3 + n.ph) * 8;
+    const dir = Math.cos(time * .5 + n.ph) >= 0 ? 1 : -1;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(dir * n.s, n.s);
+    drawSpecies(ctx, player.species, time + n.ph, .25);
+    ctx.restore();
+  }
 }
 
 function sandTop(x){
@@ -1209,17 +1248,17 @@ function drawPalm(px, py, h, lean){
 
 function drawIsland(){
   const L = level.L;
-  // shallow turquoise lagoon water over the shelf, fading at both ends
-  const tint = ctx.createLinearGradient(L + 10, 0, L + 380, 0);
+  // turquoise lagoon water behind the sand bank, fading at both ends
+  const tint = ctx.createLinearGradient(L + 90, 0, L + 430, 0);
   tint.addColorStop(0, 'rgba(140,224,238,0)');
   tint.addColorStop(.2, 'rgba(140,224,238,.26)');
   tint.addColorStop(.8, 'rgba(140,224,238,.26)');
   tint.addColorStop(1, 'rgba(140,224,238,0)');
   ctx.fillStyle = tint;
-  ctx.fillRect(L + 10, SURF, 370, 76);
+  ctx.fillRect(L + 90, SURF, 340, 132);
 
   // the island proper: a tall forested dune whose flank slides into the lagoon
-  const m0 = L + 310, m2 = L + 860;
+  const m0 = L + 340, m2 = L + 880;
   const moundY = x => {
     const t = Math.max(0, Math.min(1, (x - m0) / (m2 - m0)));
     return (1 - t) * (1 - t) * (SURF + 120) + 2 * t * (1 - t) * (SURF - 440) + t * t * (SURF + 120);
@@ -1232,14 +1271,14 @@ function drawIsland(){
   ctx.closePath(); ctx.fill();
 
   // palm forest along the dune
-  drawPalm(L + 400, moundY(L + 400) + 4, 45, -.35);
-  drawPalm(L + 470, moundY(L + 470) + 4, 68, -.15);
-  drawPalm(L + 540, moundY(L + 540) + 4, 84, 0);
-  drawPalm(L + 610, moundY(L + 610) + 4, 88, .15);
-  drawPalm(L + 675, moundY(L + 675) + 4, 70, .35);
-  drawPalm(L + 730, moundY(L + 730) + 4, 52, .5);
+  drawPalm(L + 430, moundY(L + 430) + 4, 45, -.35);
+  drawPalm(L + 500, moundY(L + 500) + 4, 68, -.15);
+  drawPalm(L + 570, moundY(L + 570) + 4, 84, 0);
+  drawPalm(L + 640, moundY(L + 640) + 4, 88, .15);
+  drawPalm(L + 705, moundY(L + 705) + 4, 70, .35);
+  drawPalm(L + 760, moundY(L + 760) + 4, 52, .5);
   // undergrowth between the trunks
-  for (const [bx, br, col] of [[L + 435, 9, '#3aa878'], [L + 505, 11, '#2e8b6a'], [L + 575, 8, '#3aa878'], [L + 645, 10, '#2e8b6a'], [L + 705, 7, '#3aa878']]){
+  for (const [bx, br, col] of [[L + 465, 9, '#3aa878'], [L + 535, 11, '#2e8b6a'], [L + 605, 8, '#3aa878'], [L + 675, 10, '#2e8b6a'], [L + 735, 7, '#3aa878']]){
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(bx, moundY(bx) + 3, br, Math.PI, 0); ctx.fill();
   }
@@ -1247,16 +1286,16 @@ function drawIsland(){
   // foam where the dune's flank meets the lagoon
   ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2;
   ctx.beginPath();
-  for (let x = L + 320; x <= L + 440; x += 8)
+  for (let x = L + 350; x <= L + 470; x += 8)
     ctx.lineTo(x, SURF + 2 + Math.sin(x * .12 + time * 3) * 1.8);
   ctx.stroke();
 
   // the HOME buoy floats in the lagoon
   ctx.fillStyle = '#ff7a59';
-  ctx.beginPath(); ctx.arc(L + 150, SURF + Math.sin(time * 2) * 3 + 4, 9, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(L + 200, SURF + Math.sin(time * 2) * 3 + 4, 9, 0, 7); ctx.fill();
   ctx.fillStyle = '#8c5a3a';
   ctx.font = "13px 'Bungee', cursive"; ctx.textAlign = 'center';
-  ctx.fillText('HOME', L + 150, SURF - 18);
+  ctx.fillText('HOME', L + 200, SURF - 18);
   ctx.textAlign = 'left';
 }
 
