@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://james-j-walshe.github.io/the-long-swim/sitemap.xml
