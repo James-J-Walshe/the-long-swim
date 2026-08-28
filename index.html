@@ -440,6 +440,12 @@ function buildLevel(diffKey){
   return { diff: diffKey, L, hazards, rocks, corals, bgRocks, npcs, food, decos, autoX: 0, name: D.title, desc: D.desc };
 }
 
+// forward net colliders for species whose leading feature outreaches the body
+const NET_REACH = {
+  sawfish:    { a: 24, b: 60, half: 9,  clear: 64 },
+  hammerhead: { a: 20, b: 40, half: 16, clear: 44 },
+};
+
 const CORAL_COLORS = ['#ff7a59', '#e8639b', '#b96ad9', '#ffb054', '#ff5c7a', '#5fd0b5'];
 // reef fish liveries: [body, stripe/tail accent]
 const REEF_FISH = [
@@ -715,15 +721,16 @@ function update(dt){
       const hw = h.w / 2;
       let hit = player.x + player.radius * .7 > h.x - hw && player.x - player.radius * .7 < h.x + hw &&
                 player.y + player.radius * .7 > h.y0 && player.y - player.radius * .7 < h.y1;
-      if (!hit && player.species === 'sawfish'){
-        // the toothed saw reaches well ahead of the body — and snags first
-        const s1 = player.x + (player.dir > 0 ? 24 : -60);
-        const s2 = player.x + (player.dir > 0 ? 60 : -24);
-        hit = s2 > h.x - hw && s1 < h.x + hw && player.y + 9 > h.y0 && player.y - 9 < h.y1;
+      const reach = NET_REACH[player.species];
+      if (!hit && reach){
+        // what leads the body — the sawfish's saw, the hammerhead's wide head — snags first
+        const s1 = player.x + (player.dir > 0 ? reach.a : -reach.b);
+        const s2 = player.x + (player.dir > 0 ? reach.b : -reach.a);
+        hit = s2 > h.x - hw && s1 < h.x + hw && player.y + reach.half > h.y0 && player.y - reach.half < h.y1;
       }
       if (hit && player.invuln <= 0){
         hurt(-230, h.mode === 'floor' ? -140 : 120, 'net');
-        player.x = h.x - hw - (player.species === 'sawfish' && player.dir > 0 ? 64 : player.radius) - 4; // wriggle free, shoved back
+        player.x = h.x - hw - (reach && player.dir > 0 ? reach.clear : player.radius) - 4; // wriggle free, shoved back
       }
     }
   }
@@ -790,9 +797,9 @@ function floorY(x){
     return (FLOOR - 26) - s * ((FLOOR - 26) - 210);
   }
   if (x <= L + 60){
-    // a little underwater sand bank guards the lagoon entrance
-    const c = Math.cos(Math.PI * (x - (L + 10)) / 100);
-    return 210 - 40 * Math.max(0, c);
+    // a little underwater sand bank guards the lagoon entrance (raised cosine: no kinks)
+    const c = Math.max(0, Math.cos(Math.PI * (x - (L + 10)) / 100));
+    return 210 - 40 * c * c;
   }
   if (x <= L + 120){
     // slip down the bank's inner face
@@ -1257,36 +1264,41 @@ function drawIsland(){
   ctx.fillStyle = tint;
   ctx.fillRect(L + 90, SURF, 340, 132);
 
-  // the island proper: a tall forested dune whose flank slides into the lagoon
-  const m0 = L + 340, m2 = L + 880;
+  // the island: one sideways-S sweep from the lagoon floor up over the dune crest
+  const f0 = L + 330, f1 = L + 560, m2 = L + 880, crestY = SURF - 160;
   const moundY = x => {
-    const t = Math.max(0, Math.min(1, (x - m0) / (m2 - m0)));
-    return (1 - t) * (1 - t) * (SURF + 120) + 2 * t * (1 - t) * (SURF - 440) + t * t * (SURF + 120);
+    if (x < f0) return 235;
+    if (x <= f1){
+      const t = (x - f0) / (f1 - f0), s = t * t * (3 - 2 * t);   // ogee: tangent at both ends
+      return 235 - s * (235 - crestY);
+    }
+    const t = Math.min(1, (x - f1) / (m2 - f1)), s = t * t * (3 - 2 * t);
+    return crestY + s * (SURF + 120 - crestY);
   };
   ctx.fillStyle = '#e8c98a';
   ctx.beginPath();
-  ctx.moveTo(m0, SURF + 130);
-  for (let x = m0; x <= m2; x += 20) ctx.lineTo(x, moundY(x));
-  ctx.lineTo(m2, SURF + 130);
+  ctx.moveTo(f0, 560);
+  for (let x = f0; x <= m2; x += 16) ctx.lineTo(x, moundY(x));
+  ctx.lineTo(m2, 560);
   ctx.closePath(); ctx.fill();
 
   // palm forest along the dune
-  drawPalm(L + 430, moundY(L + 430) + 4, 45, -.35);
-  drawPalm(L + 500, moundY(L + 500) + 4, 68, -.15);
-  drawPalm(L + 570, moundY(L + 570) + 4, 84, 0);
-  drawPalm(L + 640, moundY(L + 640) + 4, 88, .15);
-  drawPalm(L + 705, moundY(L + 705) + 4, 70, .35);
-  drawPalm(L + 760, moundY(L + 760) + 4, 52, .5);
+  drawPalm(L + 480, moundY(L + 480) + 4, 45, -.35);
+  drawPalm(L + 530, moundY(L + 530) + 4, 68, -.15);
+  drawPalm(L + 575, moundY(L + 575) + 4, 84, 0);
+  drawPalm(L + 620, moundY(L + 620) + 4, 88, .15);
+  drawPalm(L + 665, moundY(L + 665) + 4, 70, .35);
+  drawPalm(L + 705, moundY(L + 705) + 4, 52, .5);
   // undergrowth between the trunks
-  for (const [bx, br, col] of [[L + 465, 9, '#3aa878'], [L + 535, 11, '#2e8b6a'], [L + 605, 8, '#3aa878'], [L + 675, 10, '#2e8b6a'], [L + 735, 7, '#3aa878']]){
+  for (const [bx, br, col] of [[L + 505, 9, '#3aa878'], [L + 553, 11, '#2e8b6a'], [L + 598, 8, '#3aa878'], [L + 643, 10, '#2e8b6a'], [L + 686, 7, '#3aa878']]){
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(bx, moundY(bx) + 3, br, Math.PI, 0); ctx.fill();
   }
 
-  // foam where the dune's flank meets the lagoon
+  // foam where the flank crosses the waterline
   ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2;
   ctx.beginPath();
-  for (let x = L + 350; x <= L + 470; x += 8)
+  for (let x = L + 400; x <= L + 500; x += 8)
     ctx.lineTo(x, SURF + 2 + Math.sin(x * .12 + time * 3) * 1.8);
   ctx.stroke();
 
