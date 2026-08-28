@@ -470,7 +470,7 @@ function makeNet(x, D, drifting){
 
 /* ============================== state ============================== */
 let state = 'menu';   // menu | intro | play | paused | done | over
-let level = null, camX = 0, time = 0, levelTime = 0, shake = 0;
+let level = null, camX = 0, camY = 0, time = 0, levelTime = 0, shake = 0;
 const keys = {};
 let touchTarget = null, toastTimer = null, bagToastShown = false;
 
@@ -498,7 +498,7 @@ function startLevel(diffKey){
   player.hearts = sp.hearts; player.radius = sp.radius;
   player.invuln = 0; player.stun = 0; player.hunger = 100;
   player.food = 0; player.dir = 1; player.dead = false;
-  camX = 0; levelTime = 0; bagToastShown = false;
+  camX = 0; camY = 0; levelTime = 0; bagToastShown = false;
   $('lvlLabel').textContent = DIFFS[diffKey].label;
   $('introName').textContent = DIFFS[diffKey].label;
   $('introTitle').textContent = level.name;
@@ -525,7 +525,7 @@ function updateHud(){
 }
 function updateHudBars(){
   if (!level) return;
-  const p = Math.min(1, Math.max(0, player.x / (level.L + 60)));
+  const p = Math.min(1, Math.max(0, player.x / (level.L + 140)));
   $('progBar').style.width = (p * 100).toFixed(1) + '%';
   const h = Math.max(0, player.hunger);
   $('hungerBar').style.width = h.toFixed(0) + '%';
@@ -636,7 +636,7 @@ function update(dt){
     if (keys['arrowup'] || keys['w']) iy -= 1;
     if (keys['arrowdown'] || keys['s']) iy += 1;
     if (touchTarget){
-      const wx = touchTarget.x + camX, wy = touchTarget.y;
+      const wx = touchTarget.x + camX, wy = touchTarget.y + camY;
       const dx = wx - player.x, dy = wy - player.y, d = Math.hypot(dx, dy);
       if (d > 14){ ix = dx / d; iy = dy / d; }
     }
@@ -671,7 +671,7 @@ function update(dt){
   }
 
   // the current: the view creeps ever east, and the screen edge drags you with it
-  const camCap = level.L + 600 - CW;
+  const camCap = level.L + 780 - CW;
   level.autoX = Math.min(level.autoX + DIFFS[level.diff].pan * dt, camCap);
 
   // bounds + beach floor
@@ -682,6 +682,9 @@ function update(dt){
   // camera
   const target = Math.max(level.autoX, Math.min(player.x - 330, camCap));
   camX += (target - camX) * Math.min(1, dt * 5);
+  // finale: the view climbs with the sand bank until the waterline sits mid-screen
+  const targetY = -Math.max(0, Math.min(170, ((FLOOR - 26) - floorY(player.x)) * .48));
+  camY += (targetY - camY) * Math.min(1, dt * 3);
 
   // hazards
   for (const h of level.hazards){
@@ -732,8 +735,8 @@ function update(dt){
     }
   }
 
-  // home!
-  if (player.x > level.L + 60 && state === 'play'){
+  // home: gliding into the lagoon
+  if (player.x > level.L + 140 && state === 'play'){
     state = 'done';
     $('hud').classList.remove('on');
     sfx.win();
@@ -764,11 +767,17 @@ function update(dt){
 
 function floorY(x){
   if (!level) return FLOOR - 26;
-  const start = level.L - 420;
+  const start = level.L - 420, L = level.L;
   if (x <= start) return FLOOR - 26;
-  // sandy slope climbs up and breaks the surface at the island
-  const t = Math.min(1.1, (x - start) / 620);
-  return Math.max(SURF - 40, Math.min(FLOOR - 26, FLOOR - t * t * 520));
+  if (x <= L + 40){
+    // the long climb up the reef slope
+    const t = (x - start) / 460;
+    return (FLOOR - 26) - t * t * ((FLOOR - 26) - 170);
+  }
+  if (x <= L + 280) return 170;   // the shallow lagoon shelf — home
+  // beyond the lagoon the beach rises gently out of the water
+  const u = Math.min(1, (x - (L + 280)) / 260);
+  return Math.max(SURF - 40, 170 - u * u * 160);
 }
 
 /* ============================== drawing ============================== */
@@ -777,18 +786,21 @@ function draw(){
   const shx = shake > 0 ? rand(-6, 6) * shake : 0;
   const shy = shake > 0 ? rand(-4, 4) * shake : 0;
 
+  // the waterline sits lower on screen as the finale pans up
+  const surfY = SURF - camY;
+
   // water gradient
-  const g = ctx.createLinearGradient(0, 0, 0, CH);
+  const g = ctx.createLinearGradient(0, surfY - 60, 0, CH);
   g.addColorStop(0, '#8ed4ec'); g.addColorStop(.13, '#4fa3c7');
   g.addColorStop(.45, '#14547a'); g.addColorStop(1, '#071d30');
   ctx.fillStyle = g; ctx.fillRect(0, 0, CW, CH);
 
   // sky band above surface
-  const sky = ctx.createLinearGradient(0, 0, 0, SURF);
+  const sky = ctx.createLinearGradient(0, 0, 0, surfY);
   sky.addColorStop(0, '#ffd9a0'); sky.addColorStop(1, '#ffb37e');
-  ctx.fillStyle = sky; ctx.fillRect(0, 0, CW, SURF);
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, CW, surfY);
   ctx.fillStyle = '#fff3d6';
-  ctx.beginPath(); ctx.arc(CW - 140, 34, 26, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(CW - 140, 34 + (surfY - SURF) * .18, 26, 0, 7); ctx.fill();
 
   ctx.save();
   ctx.translate(shx, shy);
@@ -799,7 +811,7 @@ function draw(){
     for (let i = 0; i < 5; i++){
       const rx = ((i * 260 - camX * .3) % (CW + 400) + CW + 400) % (CW + 400) - 200;
       ctx.beginPath();
-      ctx.moveTo(rx, SURF); ctx.lineTo(rx + 70, SURF);
+      ctx.moveTo(rx, surfY); ctx.lineTo(rx + 70, surfY);
       ctx.lineTo(rx + 190 + Math.sin(time + i) * 20, CH); ctx.lineTo(rx + 40, CH);
       ctx.closePath(); ctx.fill();
     }
@@ -810,15 +822,16 @@ function draw(){
   ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.5;
   ctx.beginPath();
   for (let x = 0; x <= CW; x += 12)
-    ctx.lineTo(x, SURF + Math.sin((x + camX) * .04 + time * 2.4) * 2.5);
+    ctx.lineTo(x, surfY + Math.sin((x + camX) * .04 + time * 2.4) * 2.5);
   ctx.stroke();
 
   // ambient far fish / bubbles
   for (const a of ambient){
     ctx.globalAlpha = .25 * a.s + .1;
+    const ay = a.y - camY * .9;
     if (a.fish){
       ctx.fillStyle = '#0b3a58';
-      const fy2 = a.y + Math.sin(time * 2 + a.ph) * 4;
+      const fy2 = ay + Math.sin(time * 2 + a.ph) * 4;
       ctx.beginPath();
       ctx.ellipse(a.x, fy2, 14 * a.s, 5 * a.s, 0, 0, 7); ctx.fill();
       ctx.beginPath();
@@ -826,7 +839,7 @@ function draw(){
       ctx.lineTo(a.x + 20 * a.s, fy2 + 6 * a.s); ctx.closePath(); ctx.fill();
     } else {
       ctx.fillStyle = '#bfe6f5';
-      ctx.beginPath(); ctx.arc(a.x, a.y + Math.sin(time + a.ph) * 8, 3 * a.s, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(a.x, ay + Math.sin(time + a.ph) * 8, 3 * a.s, 0, 7); ctx.fill();
     }
   }
   ctx.globalAlpha = 1;
@@ -849,7 +862,7 @@ function drawBgRocks(){
   for (const b of level.bgRocks){
     const sx = b.x - camX * .55;
     if (sx + b.w < -60 || sx - b.w > CW + 60) continue;
-    const cy = CH - b.h / 2 + 14;
+    const cy = CH - b.h / 2 + 14 - camY * .75;
     ctx.beginPath();
     b.pts.forEach((p, i) => {
       const px2 = sx + p.x * b.w / 2, py2 = cy + p.y * b.h / 2;
@@ -862,7 +875,7 @@ function drawBgRocks(){
 
 function drawWorld(){
   ctx.save();
-  ctx.translate(-camX, 0);
+  ctx.translate(-camX, -camY);
 
   drawSeabed();
   drawRocks();
@@ -1196,29 +1209,54 @@ function drawPalm(px, py, h, lean){
 
 function drawIsland(){
   const L = level.L;
-  // lapping foam where the emerging beach meets the sea
+  // shallow turquoise lagoon water over the shelf, fading at both ends
+  const tint = ctx.createLinearGradient(L + 10, 0, L + 380, 0);
+  tint.addColorStop(0, 'rgba(140,224,238,0)');
+  tint.addColorStop(.2, 'rgba(140,224,238,.26)');
+  tint.addColorStop(.8, 'rgba(140,224,238,.26)');
+  tint.addColorStop(1, 'rgba(140,224,238,0)');
+  ctx.fillStyle = tint;
+  ctx.fillRect(L + 10, SURF, 370, 76);
+
+  // the island proper: a tall forested dune whose flank slides into the lagoon
+  const m0 = L + 310, m2 = L + 860;
+  const moundY = x => {
+    const t = Math.max(0, Math.min(1, (x - m0) / (m2 - m0)));
+    return (1 - t) * (1 - t) * (SURF + 120) + 2 * t * (1 - t) * (SURF - 440) + t * t * (SURF + 120);
+  };
+  ctx.fillStyle = '#e8c98a';
+  ctx.beginPath();
+  ctx.moveTo(m0, SURF + 130);
+  for (let x = m0; x <= m2; x += 20) ctx.lineTo(x, moundY(x));
+  ctx.lineTo(m2, SURF + 130);
+  ctx.closePath(); ctx.fill();
+
+  // palm forest along the dune
+  drawPalm(L + 400, moundY(L + 400) + 4, 45, -.35);
+  drawPalm(L + 470, moundY(L + 470) + 4, 68, -.15);
+  drawPalm(L + 540, moundY(L + 540) + 4, 84, 0);
+  drawPalm(L + 610, moundY(L + 610) + 4, 88, .15);
+  drawPalm(L + 675, moundY(L + 675) + 4, 70, .35);
+  drawPalm(L + 730, moundY(L + 730) + 4, 52, .5);
+  // undergrowth between the trunks
+  for (const [bx, br, col] of [[L + 435, 9, '#3aa878'], [L + 505, 11, '#2e8b6a'], [L + 575, 8, '#3aa878'], [L + 645, 10, '#2e8b6a'], [L + 705, 7, '#3aa878']]){
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(bx, moundY(bx) + 3, br, Math.PI, 0); ctx.fill();
+  }
+
+  // foam where the dune's flank meets the lagoon
   ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 2;
   ctx.beginPath();
-  for (let x = L + 130; x <= L + 250; x += 8)
+  for (let x = L + 320; x <= L + 440; x += 8)
     ctx.lineTo(x, SURF + 2 + Math.sin(x * .12 + time * 3) * 1.8);
   ctx.stroke();
 
-  // a small grove of coconut palms on the crest
-  drawPalm(L + 240, SURF - 40, 34, -.3);
-  drawPalm(L + 320, SURF - 42, 40, .28);
-  drawPalm(L + 395, SURF - 44, 28, .55);
-  // beach scrub at their feet
-  ctx.fillStyle = '#3aa878';
-  ctx.beginPath(); ctx.arc(L + 275, SURF - 38, 7, Math.PI, 0); ctx.fill();
-  ctx.fillStyle = '#2e8b6a';
-  ctx.beginPath(); ctx.arc(L + 362, SURF - 41, 6, Math.PI, 0); ctx.fill();
-
-  // welcome buoy at the finish
+  // the HOME buoy floats in the lagoon
   ctx.fillStyle = '#ff7a59';
-  ctx.beginPath(); ctx.arc(L + 40, SURF + Math.sin(time * 2) * 3 + 4, 9, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(L + 150, SURF + Math.sin(time * 2) * 3 + 4, 9, 0, 7); ctx.fill();
   ctx.fillStyle = '#8c5a3a';
   ctx.font = "13px 'Bungee', cursive"; ctx.textAlign = 'center';
-  ctx.fillText('HOME', L + 40, SURF - 24);
+  ctx.fillText('HOME', L + 150, SURF - 18);
   ctx.textAlign = 'left';
 }
 
@@ -1290,7 +1328,7 @@ function drawParticles(){
   for (const p of particles){
     ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
     ctx.fillStyle = p.color;
-    ctx.beginPath(); ctx.arc(p.x - camX, p.y, p.r, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x - camX, p.y - camY, p.r, 0, 7); ctx.fill();
   }
   ctx.globalAlpha = 1;
 }
